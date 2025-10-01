@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>AR no papel — MindAR</title>
+
+  <!-- MindAR (módulo) + ThreeJS (módulo) -->
+  <script type="module">
+    import { MindARThree } from "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.module.js";
+    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js";
+    import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/loaders/GLTFLoader.js";
+
+    // Configurações que você pode mudar
+    const TARGET_FILE = "target.mind";           // seu target
+    const MODEL_FILE  = "models/projeto.glb";    // seu GLB
+    const START_SCALE = 0.001;                   // chute inicial de escala
+    const START_Y     = 0.0;                     // altura inicial
+    const EXPOSURE    = 1.0;                     // iluminação base
+
+    const ui = {
+      info: (t) => document.querySelector(".info").textContent = t,
+      on: (sel, fn) => document.querySelector(sel).addEventListener("click", fn),
+    };
+
+    const mindarThree = new MindARThree({
+      container: document.body,
+      imageTargetSrc: TARGET_FILE,
+      maxTrack: 1
+    });
+
+    const { renderer, scene, camera } = mindarThree;
+
+    // Luz básica
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    const amb  = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(hemi, amb);
+
+    // Exposição
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMappingExposure = EXPOSURE;
+
+    // Anchor no seu Target 0
+    const anchor = mindarThree.addAnchor(0);
+
+    // Referência do modelo para UI
+    let model = null;
+
+    // Grade opcional para calibrar (10 cm)
+    const grid = new THREE.GridHelper(0.3, 3); // 30 cm com divisões de 10 cm
+    grid.rotation.x = Math.PI/2; // deita no papel
+    grid.visible = false;
+    anchor.group.add(grid);
+
+    // Carregar seu GLB
+    const loader = new GLTFLoader();
+    loader.load(MODEL_FILE, (gltf)=>{
+      model = gltf.scene;
+      model.traverse(o=>{
+        if (o.isMesh) {
+          o.castShadow = false;
+          o.receiveShadow = false;
+          if (o.material && o.material.map) o.material.map.anisotropy = 4;
+        }
+      });
+      model.scale.setScalar(START_SCALE);
+      model.position.set(0, START_Y, 0);
+      anchor.group.add(model);
+      ui.info("Aponte para o alvo no papel.");
+    }, undefined, (err)=>{
+      ui.info("Falha ao carregar o GLB. Confira o caminho em /models/projeto.glb.");
+      console.error(err);
+    });
+
+    // Controles simples
+    function adjustScale(factor){
+      if (!model) return;
+      const s = model.scale.x * factor;
+      model.scale.setScalar(s);
+      ui.info(`Escala: ${s.toFixed(6)} | Altura: ${model.position.y.toFixed(3)} m`);
+    }
+    function adjustY(delta){
+      if (!model) return;
+      model.position.y += delta;
+      ui.info(`Escala: ${model.scale.x.toFixed(6)} | Altura: ${model.position.y.toFixed(3)} m`);
+    }
+
+    // Botões
+    window.addEventListener("DOMContentLoaded", ()=>{
+      ui.on("#bScaleUp",   ()=>adjustScale(1.10));
+      ui.on("#bScaleDown", ()=>adjustScale(0.90));
+      ui.on("#bYUp",       ()=>adjustY(0.01));   // +1 cm
+      ui.on("#bYDown",     ()=>adjustY(-0.01));  // -1 cm
+      ui.on("#bGrid",      ()=>{ grid.visible = !grid.visible; });
+    });
+
+    // Loop
+    const start = async ()=>{
+      await mindarThree.start(); // Safari pedirá permissão de câmera
+      renderer.setAnimationLoop(()=>{ renderer.render(scene, camera); });
+      ui.info("Aponte a câmera para o alvo impresso.");
+    };
+    start();
+  </script>
+
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .hud{position:fixed;inset:auto 0 0 0;display:flex;gap:8px;padding:10px;justify-content:center;background:linear-gradient(to top, rgba(0,0,0,.55), transparent)}
+    .btn{appearance:none;border:1px solid #fff;border-radius:10px;background:rgba(255,255,255,.08);color:#fff;padding:10px 12px;font-size:14px}
+    .btn:active{transform:translateY(1px)}
+    .info{position:fixed;left:10px;top:10px;color:#fff;font-size:13px;background:rgba(0,0,0,.5);padding:6px 8px;border-radius:8px;max-width:70ch}
+  </style>
+</head>
+<body>
+  <div class="info">Carregando...</div>
+  <div class="hud">
+    <button id="bScaleDown" class="btn">Escala −10%</button>
+    <button id="bScaleUp" class="btn">Escala +10%</button>
+    <button id="bYDown" class="btn">Altura −1 cm</button>
+    <button id="bYUp" class="btn">Altura +1 cm</button>
+    <button id="bGrid" class="btn">Grade 10 cm</button>
+  </div>
+</body>
+</html>
